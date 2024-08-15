@@ -303,43 +303,61 @@ def make_train(config, rng_init):
 
 @hydra.main(version_base=None, config_path="config", config_name="ippo_ff_mabrax")
 def main(config):
-    print(f"<==== ENVS {config['NUM_ENVS']}  STEPS {int(config['TOTAL_TIMESTEPS'])} ====>")
     config = OmegaConf.to_container(config)
     rng = jax.random.PRNGKey(config["SEED"])
     train_rng, make_rng, render_rng = jax.random.split(rng, 3)
-    train_rngs = jax.random.split(train_rng, config["NUM_SEEDS"])    
     with jax.disable_jit(config["DISABLE_JIT"]):
-        train_jit = jax.jit(make_train(config, make_rng),  device=jax.devices()[config["DEVICE"]])
-        # first run (includes JIT)
-        start_time_j = time.time()
         print(f"JIT start: {time.ctime()}")
-        out = jax.vmap(train_jit)(train_rngs)
-        # second run (excludes JIT)
+        train_jit = jax.jit(make_train(config, make_rng),  device=jax.devices()[config["DEVICE"]])
         start_time_c = time.time()
         print(f"Compute start: {time.ctime()}")
-        out = jax.vmap(train_jit)(train_rngs)
+        out = train_jit(train_rng)
     end_time = time.time()
     print(f"Compute end: {time.ctime()}")
-    compute_time = end_time-start_time_c
-    jit_time = (start_time_c-start_time_j) - compute_time
-    sps = config['TOTAL_TIMESTEPS']/compute_time
-    print(f"[[[ JIT: {jit_time} ]]]")
-    print(f"[[[ TIME: {compute_time} ]]]")
-    print(f"[[[ SPS: {sps} ]]]")
+    print(f"Compute time: {end_time-start_time_c}")
     env_name = config["ENV_NAME"]
     os.makedirs(f"mabrax/{env_name}", exist_ok=True)
-    EXP_NAME = "_".join((str(int(config["NUM_ENVS"])), str(int(config["TOTAL_TIMESTEPS"]))))
-    jnp.save(f"mabrax/{env_name}/benchmark_{EXP_NAME}.npy", out["metrics"]["returned_episode_returns"])
-    with open(f"mabrax/{env_name}/benchmark.csv", mode="a", encoding="utf-8") as f:
-        print(",".join((
-            str(int(config["NUM_ENVS"])),
-            str(int(config["TOTAL_TIMESTEPS"])),
-            str(int(sps)),
-            str(int(jit_time)),
-            str(int(compute_time)),
-            )),
-            file=f
+    jnp.save(f"mabrax/{env_name}/results.npy", out["metrics"]["returned_episode_returns"])
+    
+    ######
+    train_state = out["runner_state"][0]
+    rng, rng_env, rng_act = jax.random.split(render_rng, 3)
+    env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    obs, env_state = env.reset(rng_env)
+    eval_network = ActorCritic(env.action_space(env.agents[0]).shape[0], activation=config["ACTIVATION"])
+
+    state_seq = [env_state]
+    for _ in range(config["NUM_STEPS"]):
+        obs_batch = batchify(obs, env.agents, env.num_agents)
+        rng_act, _rng_act = jax.random.split(rng_act)
+        pi, value = eval_network.apply(train_state.params, obs_batch)
+        action = pi.sample(seed=_rng_act)
+        env_act = unbatchify(action, env.agents, 1, env.num_agents)
+        env_act = {agent_id: act.squeeze(0) for agent_id, act in env_act.items()}
+
+        # STEP ENV
+        rng_env, _rng_env = jax.random.split(rng_env)
+        obs, env_state, reward, done, info = env.step(
+            _rng_env, env_state, env_act,
         )
+        state_seq.append(env_state)
+
+    tag = config["ENV_NAME"] + "_" + str(int(config["TOTAL_TIMESTEPS"]))
+    from brax.io import html
+    viz = html.render(env.sys, [s.pipeline_state for s in state_seq])
+    with open(f"render_{tag}.html", "w") as f:
+        f.write(viz)
+    reward_dist = jnp.array([s.metrics["reward_dist"] for s in state_seq])
+    reward_ctrl = jnp.array([s.metrics["reward_ctrl"] for s in state_seq])
+    jnp.save(f"mabrax/{env_name}/reward_dist_{tag}.npy", reward_dist)
+    jnp.save(f"mabrax/{env_name}/reward_ctrl_{tag}.npy", reward_ctrl)
+    #reward_scratch = jnp.array([s.metrics["reward_scratching"] for s in state_seq])
+    #jnp.save(f"mabrax/{env_name}/reward_scratch_{tag}.npy", reward_scratch)
+    reward_wiping = jnp.array([s.metrics["reward_wiping"] for s in state_seq])
+    jnp.save(f"mabrax/{env_name}/reward_wiping_{tag}.npy", reward_wiping)
+
+    
+
 
 if __name__ == "__main__":
     main()

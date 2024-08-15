@@ -33,6 +33,14 @@ _agent_action_mapping = {
         "agent_0": jnp.array([0, 1, 2]),
         "agent_1": jnp.array([3, 4, 5]),
     },
+    "scratchitch": {
+        "robot": jnp.array([17, 18, 19, 20, 21, 22, 23]),
+        "human": jnp.array([11, 12, 13]),
+    },
+    "bedbathing": {
+        "robot": jnp.array([17, 18, 19, 20, 21, 22, 23]),
+        "human": jnp.array([11, 12, 13]),
+    },
 }
 
 
@@ -95,6 +103,16 @@ ranges: Dict[str, Dict[str, List[Union[int, Tuple[int, int]]]]] = {
     "walker2d_2x3": {
         "agent_0": [0, (2, 5), (8, 9), (11, 13)],
         "agent_1": [0, 2, (5, 9), (14, 16)],
+    },
+    "scratchitch": {
+        # "robot": [(0,80)], # Old obs
+        # "human": [(81,161)] # Old obs
+        "robot": [(0,28)], # New obs
+        "human": [(29,68)] # New obs
+    },
+    "bedbathing": {
+        "robot": [(0,24)],
+        "human": [(25,60)]
     },
 }
 

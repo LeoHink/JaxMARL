@@ -221,3 +221,13 @@ class Humanoid(MABraxEnv):
 class Walker2d(MABraxEnv):
     def __init__(self, **kwargs):
         super().__init__("walker2d_2x3", **kwargs)
+
+
+class ScratchItch(MABraxEnv):
+    def __init__(self, **kwargs):
+        super().__init__("scratchitch", **kwargs)
+
+
+class BedBathing(MABraxEnv):
+    def __init__(self, **kwargs):
+        super().__init__("bedbathing", **kwargs)
